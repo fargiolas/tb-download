@@ -1,6 +1,7 @@
 # Copyright (c) 2022 Filippo Argiolas <filippo.argiolas@ca.infn.it>.
 #
 # a simple script to download timeseries data from ThingsBoard
+# barely tested, poor error checking, ugly code, use at your own risk
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -84,6 +85,33 @@ def get_timeseries(client, device, keys, start_ts, end_ts):
     return pd.concat(dfs, join="outer", axis=1)
 
 
+def get_asset_devices(client, asset):
+    """Get devices belonging to an asset."""
+    relations = rest_client.find_by_from(asset.id, asset.id.entity_type, "Contains")
+    devs = []
+    for rel in relations:
+        dev = rest_client.get_device_by_id(rel.to.id)
+        devs.append(dev)
+
+    return devs
+
+
+def query_attributes(client, devices, query="", attributes=""):
+    """Query attributes from devices matching query."""
+    attrs = []
+
+    try:
+        dev = [d for d in devices if query in d.name][0]
+        attrs = client.get_attributes(dev.id.entity_type, dev.id.id, attributes)
+        for attr in attrs:
+            if "Time" in attr["key"]:
+                attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)
+    except IndexError:
+        pass
+
+    return attrs
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="CA2020 ThingsBoard timeseries downloader",
                                      formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(prog, max_help_position=8, width=100))
@@ -113,6 +141,7 @@ if __name__ == '__main__':
         # TB has different API depending on what type of user you are (tenant, customer, other?)
         # define a couple of helper methods to abstract those differences away
         # assume we only have tenant users and a public customer, we'll get back to this if we device to enable other customers too
+        # I should probably subclass RestClientCE to make this more readable
         if args.public_id:
             _login = functools.partial(rest_client.public_login, args.public_id)
             _get_assets = functools.partial(rest_client.get_customer_assets, args.public_id)
@@ -137,22 +166,20 @@ if __name__ == '__main__':
                     logger.info("---")
                     logger.info(f'asset: {asset.name}')
 
-                    relations = rest_client.find_by_from(asset.id, asset.id.entity_type, "Contains")
-                    devs = []
-                    for rel in relations:
-                        dev = rest_client.get_device_by_id(rel.to.id)
-                        devs.append(dev.name)
+                    devs = get_asset_devices(rest_client, asset)
 
-                        # gps devices provide useful metadata in the attributes
-                        if "gps" in dev.name:
-                            attrs = rest_client.get_attributes(dev.id.entity_type, dev.id.id, "station_label,station_location,active,lastActivityTime")
-                            for attr in attrs:
-                                k, v = attr["key"], attr["value"]
-                                if k == "lastActivityTime":
-                                    v = dt.datetime.fromtimestamp(v / 1000.)
-                                logger.info(f'{k}: {v}')
+                    # this is specific to our TB instance, each asset, which we
+                    # call station, has a gps device that publishes attributes
+                    # with some useful metadata about the station
+                    #
+                    # query and display them here for debugging purposes
+                    attrs = query_attributes(rest_client, devs,
+                                             query="-gps",
+                                             attributes="station_name,station_location,active,lastActivityTime")
+                    for attr in attrs:
+                        logger.info(f'{attr["key"]}: {attr["value"]}')
 
-                    logger.info("devices: {}".format(", ".join(devs)))
+                    logger.info("devices: {}".format(", ".join([d.name for d in devs])))
 
                 exit()
 
