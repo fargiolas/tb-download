@@ -37,10 +37,15 @@ def save_timeseries(client, device, start_date, end_date, prefix=""):
     delta = dt.timedelta(days=1)
     total_timespan = end_date - start_date
     orig_start_date = start_date
-    append = False
+
     fname = f"{prefix}-{device.id.id}.csv"
 
     logger.info(f"saving to {fname}")
+
+    # create the csv in write mode in the first iteration
+    # append in the following ones
+    # also only enable header in the first loop
+    append = False
 
     while start_date <= end_date:
         interval_start = start_date
@@ -53,14 +58,10 @@ def save_timeseries(client, device, start_date, end_date, prefix=""):
         df = get_timeseries(client, device, keys, interval_start.timestamp(), interval_end.timestamp())
         if df is None:
             continue
-        if not append:
-            mode = "w"
-            header = True
-        else:
-            mode = "a"
-            header = False
 
-        df.to_csv(fname, mode=mode, columns=keys, header=header)
+        df.to_csv(fname, mode="a" if append else "w", columns=keys, header=not append)
+
+        append = True
 
 
 def get_timeseries(client, device, keys, start_ts, end_ts):
