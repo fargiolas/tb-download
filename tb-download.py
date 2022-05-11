@@ -57,16 +57,36 @@ class TBDownload(object):
             sys.exit(1)
 
     def login(self):
-        r = self._post(f'{self.url}/api/auth/login/public',
-                       json={'publicId': self.public_id})
+        if self.public_id:
+            r = self._post(f'{self.url}/api/auth/login/public',
+                           json={'publicId': self.public_id})
+        else:
+            r = self._post(f'{self.url}/api/auth/login',
+                           json={'username': self.username,
+                                 'password': self.password})
 
         self.token = r.json()['token']
         self.auth_headers = {'X-Authorization': f'Bearer {self.token}'}
 
+        if self.public_id:
+            self.user_authority = "CUSTOMER"
+            self.user_id = self.public_id
+        else:
+            r = self._get(f'{self.url}/api/auth/user',
+                          headers=self.auth_headers)
+            self.user_authority = r.json()['authority']
+            self.user_id = r.json()['customerId']['id']
+
     def get_assets(self, page_size=20, page=0):
-        r = self._get(f'{self.url}/api/customer/{self.public_id}/assets',
-                      headers=self.auth_headers,
-                      params={'pageSize': page_size, 'page': page})
+        if self.user_authority == "TENANT_ADMIN":
+            r = self._get(f'{self.url}/api/tenant/assets',
+                          headers=self.auth_headers,
+                          params={'pageSize': page_size, 'page': page})
+
+        else:
+            r = self._get(f'{self.url}/api/customer/{self.user_id}/assets',
+                          headers=self.auth_headers,
+                          params={'pageSize': page_size, 'page': page})
 
         return r.json()
 
@@ -107,10 +127,16 @@ class TBDownload(object):
             pass
 
     def get_devices(self, page_size=30, page=0, text_search=""):
-        r = self._get(f'{self.url}/api/customer/{self.public_id}/devices',
-                      headers=self.auth_headers,
-                      params={'pageSize': page_size, 'page': page})
-
+        if self.user_authority == "TENANT_ADMIN":
+            r = self._get(f'{self.url}/api/tenant/devices',
+                          headers=self.auth_headers,
+                          params={'pageSize': page_size, 'page': page,
+                                  'textSearch': text_search})
+        else:
+            r = self._get(f'{self.url}/api/customer/{self.user_id}/devices',
+                          headers=self.auth_headers,
+                          params={'pageSize': page_size, 'page': page,
+                                  'textSearch': text_search})
         return r.json()
 
 
