@@ -228,11 +228,13 @@ if __name__ == '__main__':
     start_date = dt.datetime.fromisoformat(args.start_date)
     end_date = dt.datetime.fromisoformat(args.end_date)
 
+    logger.info(f'connecting to [link]{args.url}[/link]')
     client = TBDownload(args.url,
                         public_id=args.public_id,
                         username=args.username,
                         password=args.password)
     client.login()
+    logger.info('login successful')
 
     if args.list_devices:
         assets = client.get_assets()
@@ -249,6 +251,8 @@ if __name__ == '__main__':
             attrs = client.query_attributes(devs, query="-gps",
                                             attributes="station_name,station_location,active,lastActivityTime")
             for attr in attrs:
+                if "Time" in attr["key"]:
+                    attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)
                 logger.info(f'{attr["key"]}: {attr["value"]}')
 
         exit()
