@@ -148,12 +148,12 @@ class TBDownload(object):
 
         return devs
 
-    def query_attributes(self, device, attributes=""):
+    def query_attributes(self, device, attributes=''):
         """Query attributes from a device."""
         entity_id = device['id']['id']
         entity_type = device['id']['entityType']
         r = self._get(f'{self.url}/api/plugins/telemetry/{entity_type}/{entity_id}/values/attributes',
-                      params={'keys': attributes},
+                      params={'keys': ','.join(attributes)},
                       headers=self.auth_headers)
         return r.json()
 
@@ -308,7 +308,10 @@ if __name__ == '__main__':
             try:
                 dev = [d for d in devs if "-gps" in d['name']][0]
 
-                attrs = client.query_attributes(dev, attributes="station_name,station_location,active,lastActivityTime")
+                attrs = client.query_attributes(dev, attributes=['station_name',
+                                                                 'station_location',
+                                                                 'active',
+                                                                 'lastActivityTime'])
                 for attr in attrs:
                     if "Time" in attr["key"]:
                         attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)
