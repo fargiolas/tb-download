@@ -17,6 +17,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
+import os
 import sys
 import requests
 import datetime as dt
@@ -178,7 +179,7 @@ class TBDownload(object):
                                   'textSearch': text_search})
         return r.json()
 
-    def get_timeseries(self, device, keys, start_ts, end_ts, limit=86400*10):
+    def get_timeseries(self, device, keys, start_ts, end_ts, limit=86400 * 10):
         """Retrieve time series for a device in the desired interval.
 
         :param device: desired device
@@ -210,7 +211,7 @@ class TBDownload(object):
 
         return pd.concat(dfs, join="outer", axis=1)
 
-    def save_timeseries(self, device, start_date, end_date, prefix=""):
+    def save_timeseries(self, device, start_date, end_date, filename="output.csv"):
         """Save timeseries data from selected interval in CSV file.
 
         Download timeseries data from selected interval one day at the
@@ -220,7 +221,7 @@ class TBDownload(object):
         :param device: desired device
         :param start_date: interval start, python datetime object
         :param end_date: interval end, python datetime object
-        :param prefix: filename prefix
+        :param filename: output filename
 
         """
         entity_id = device['id']['id']
@@ -234,9 +235,7 @@ class TBDownload(object):
         total_timespan = end_date - start_date
         orig_start_date = start_date
 
-        fname = f"{prefix}-{entity_id}.csv"
-
-        logger.info(f"saving to {fname}")
+        logger.info(f"saving to {filename}")
 
         # create the csv in write mode in the first iteration
         # append in the following ones
@@ -255,9 +254,27 @@ class TBDownload(object):
             if df is None:
                 continue
 
-            df.to_csv(fname, mode="a" if append else "w", columns=keys, header=not append)
+            df.to_csv(filename, mode="a" if append else "w", columns=keys, header=not append)
 
             append = True
+
+
+def confirm(question, skip=False):
+    """Ask user input for yes/no question."""
+    if skip:
+        return True
+
+    while True:
+        try:
+            ans = input(f'{question} [Y/n]: ').strip().lower()
+            if (not ans) or ans[:1] == 'y':
+                return True
+            elif ans[:1] == 'n':
+                return False
+            else:
+                raise ValueError
+        except ValueError:
+            print("Please answer yes or no")
 
 
 if __name__ == '__main__':
@@ -268,9 +285,11 @@ if __name__ == '__main__':
     parser.add_argument("--username", type=str, help="ThingsBoard Tenant username")
     parser.add_argument("--password", type=str, help="ThingsBoard Tenant password")
     parser.add_argument("--start-date", type=str, default="2022-03-01T00:00:00+00:00", help="start date, in ISO format")
-    parser.add_argument("--end-date", type=str, default="2022-03-07T23:59:59+00:00", help="end date, in ISO format")
+    parser.add_argument("--end-date", type=str, default="2022-03-02T23:59:59+00:00", help="end date, in ISO format")
     parser.add_argument("--query", type=str, default="", help="Device search query (e.g. gas), empty for all devices")
     parser.add_argument("--list-devices", action="store_true", help="List assets and devices")
+    parser.add_argument("-o", "--output-dir", default=os.curdir, help="Output directory for csv files")
+    parser.add_argument("-f", "--force", action="store_true", help="Force output directory creation and overwrite existing files")
 
     args = parser.parse_args()
 
@@ -285,7 +304,7 @@ if __name__ == '__main__':
     start_date = dt.datetime.fromisoformat(args.start_date)
     end_date = dt.datetime.fromisoformat(args.end_date)
 
-    logger.info(f'connecting to [link]{args.url}[/link]')
+    logger.info(f'connecting to {args.url}')
     client = TBDownload(args.url,
                         public_id=args.public_id,
                         username=args.username,
@@ -333,5 +352,20 @@ if __name__ == '__main__':
 
     for dev in device_list:
         logger.info("---")
+
+        filename = os.path.join(args.output_dir, f'{dev["name"]}.csv')
+
+        if not os.path.exists(args.output_dir):
+            if confirm(f'Output dir {args.output_dir} does not exist, do you want to create it?', args.force):
+                os.makedirs(args.output_dir, exist_ok=True)
+            else:
+                logger.warning('Not sure where to save csv files, quitting.')
+                exit()
+
+        if os.path.exists(filename):
+            if not confirm(f'Output file {filename} already exists, do you want to overwrite it?', args.force):
+                logger.info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
+                continue
+
         logger.info(f'downloading data for device: {dev["name"]}, id: {dev["id"]["id"]}')
-        client.save_timeseries(dev, start_date, end_date, dev["name"])
+        client.save_timeseries(dev, start_date, end_date, filename=filename)
