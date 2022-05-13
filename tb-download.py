@@ -21,14 +21,55 @@ import os
 import sys
 import requests
 import datetime as dt
-import logging
 import pandas as pd
 import argparse
 
+from rich.console import Console
+from rich.highlighter import RegexHighlighter
+from rich.theme import Theme
 
-logging.basicConfig()
-logger = logging.getLogger("tb-download")
-logger.setLevel(logging.DEBUG)
+from rich.prompt import Confirm
+from rich.traceback import install
+
+from rich.progress import Progress
+
+
+class MyHighlighter(RegexHighlighter):
+    """Style!."""
+
+    base_style = "base."
+    highlights = [r"(?P<tag>^\s?[^:\s]+:)",
+                  r"(?P<true>True)",
+                  r"(?P<false>False)",
+                  r"(?P<date>\d+-\d+-\d+.\d+:\d+:\d+.[\d:]*)",
+                  r"(?P<path>`.+`)",
+                  ]
+
+
+install(show_locals=True)
+theme = Theme({"base.tag": "bold yellow",
+               "base.true": "bold green",
+               "base.false": "bold red",
+               "base.date": "italic cyan",
+               "base.path": "bold italic orange1"
+               })
+console = Console(highlighter=MyHighlighter(), theme=theme, markup=True)
+
+
+def info(*args, **kwargs):  # noqa: D103
+    return console.print(*args, **kwargs)
+
+
+def warning(*args, **kwargs):  # noqa: D103
+    return console.print(*args, **kwargs, style="orange1")
+
+
+def error(*args, **kwargs):  # noqa: D103
+    return console.print(*args, **kwargs, style="red")
+
+
+def rule(*args, **kwargs):  # noqa: D103
+    return console.rule(*args, **kwargs, style="purple")
 
 
 class TBDownload(object):
@@ -72,7 +113,7 @@ class TBDownload(object):
             r.raise_for_status()
             return r
         except requests.exceptions.RequestException:
-            logger.exception('an exception occured during GET')
+            console.print_exception()
             sys.exit(1)
 
     def _post(self, *args, **kwargs):
@@ -81,7 +122,7 @@ class TBDownload(object):
             r.raise_for_status()
             return r
         except requests.exceptions.RequestException:
-            logger.exception('an exception occured during POST')
+            console.print_exception()
             sys.exit(1)
 
     def login(self):
@@ -199,7 +240,7 @@ class TBDownload(object):
                               'endTs': int(end_ts * 1000)})
 
         if not r.json():
-            logger.warning("no data for selected interval")
+            warning("no data for selected interval")
             return None
 
         dfs = []
@@ -230,51 +271,43 @@ class TBDownload(object):
                       headers=self.auth_headers)
 
         keys = r.json()
+        if not keys:
+            warning("no telemetry found for selected device")
+            return
 
-        delta = dt.timedelta(days=1)
+        delta = dt.timedelta(hours=3)
         total_timespan = end_date - start_date
         orig_start_date = start_date
 
-        logger.info(f"saving to {filename}")
+        info(f"saving to `{filename}`")
 
         # create the csv in write mode in the first iteration
         # append in the following ones
         # also only enable header in the first loop
         append = False
 
-        while start_date <= end_date:
-            interval_start = start_date
-            interval_end = interval_start + delta
-            span = start_date - orig_start_date
-            start_date = interval_end
+        with Progress(transient=True, console=console) as progress:
+            task = progress.add_task("[red]Downloading...", total=total_timespan / delta)
+            while start_date <= end_date:
+                interval_start = start_date
+                interval_end = interval_start + delta
+                span = start_date - orig_start_date
+                start_date = interval_end
 
-            logger.info(f'{device["name"]}: fetching day {span.days+1} of {total_timespan.days+1} (from {interval_start.isoformat()} to {interval_end.isoformat()})')
+                fmt = "%Y-%m-%d %H:%M:%S"
+                progress.console.print(f'fetching data from {interval_start.strftime(fmt)} to {interval_end.strftime(fmt)} (days {span.days+1} of {total_timespan.days+1})')
 
-            df = self.get_timeseries(device, keys, interval_start.timestamp(), interval_end.timestamp())
-            if df is None:
-                continue
+                df = self.get_timeseries(device, keys, interval_start.timestamp(), interval_end.timestamp())
+                if df is None:
+                    continue
 
-            df.to_csv(filename, mode="a" if append else "w", columns=keys, header=not append)
+                df.to_csv(filename, mode="a" if append else "w", columns=keys, header=not append)
 
-            append = True
+                append = True
 
+                progress.update(task, advance=1)
 
-def confirm(question, skip=False):
-    """Ask user input for yes/no question."""
-    if skip:
-        return True
-
-    while True:
-        try:
-            ans = input(f'{question} [Y/n]: ').strip().lower()
-            if (not ans) or ans[:1] == 'y':
-                return True
-            elif ans[:1] == 'n':
-                return False
-            else:
-                raise ValueError
-        except ValueError:
-            print("Please answer yes or no")
+        info('[bold green]download complete.[/bold green]')
 
 
 if __name__ == '__main__':
@@ -294,8 +327,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if not (args.public_id or args.username or args.password):
-        logger.error("Please provide either a username and a password for Tenant login or a Public Dashboard ID for public login")
-        logger.error("If both credentials types are provided, public login will be preferred")
+        error("please provide either username and password or a public customer id")
+        error("if both credentials types are provided, public login will be preferred")
         exit()
 
         start_ts = int(dt.datetime.fromisoformat(args.start_date).timestamp() * 1000)
@@ -304,13 +337,17 @@ if __name__ == '__main__':
     start_date = dt.datetime.fromisoformat(args.start_date)
     end_date = dt.datetime.fromisoformat(args.end_date)
 
-    logger.info(f'connecting to {args.url}')
+    rule()
+    console.print('[bold deep_pink1]thingsboard timeseries downloader[/bold deep_pink1]', justify='center')
+    rule()
+
+    info(f'connecting to [blue link={args.url}]{args.url}[/blue link]')
     client = TBDownload(args.url,
                         public_id=args.public_id,
                         username=args.username,
                         password=args.password)
     client.login()
-    logger.info('login successful')
+    info('enumerating assets and devices...')
 
     if args.list_devices:
         assets = client.get_assets()
@@ -318,11 +355,10 @@ if __name__ == '__main__':
             if 'Main_' in asset['name']:
                 continue
 
-            logger.info("---")
-            logger.info(f'asset: {asset["name"]}')
+            rule(f'asset: {asset["name"]}')
 
             devs = client.get_asset_devices(asset)
-            logger.info("devices: {}".format(", ".join([d['name'] for d in devs])))
+            info(" devices: {}".format(", ".join([d['name'] for d in devs])))
 
             try:
                 dev = [d for d in devs if "-gps" in d['name']][0]
@@ -333,39 +369,41 @@ if __name__ == '__main__':
                                                                  'lastActivityTime'])
                 for attr in attrs:
                     if "Time" in attr["key"]:
-                        attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)
-                    logger.info(f'{attr["key"]}: {attr["value"]}')
+                        attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)\
+                            .strftime('%Y-%m-%d %H:%M:%S')
+                    info(f' {attr["key"]}: {attr["value"]}')
             except IndexError:
                 pass
 
         exit()
 
-    logger.info(f'querying devices matching search query: {args.query}')
+    info(f'querying devices matching search query: [italic]{args.query}[/italic]')
     devs = client.get_devices(text_search=args.query)
     device_list = devs["data"]
 
     if len(device_list) > 0:
-        logger.info("found {} devices matching the search query: {}".format(
-            len(device_list), ", ".join([d["name"] for d in device_list])))
+        info("found {} devices matching the search query: {}".format(
+            len(device_list), ", ".join([f'[bold italic yellow]{d["name"]}[/bold italic yellow]' for d in device_list])))
     else:
-        logger.warning("no devices matching search query: {}".format(args.query))
+        warning("no devices matching search query: {}".format(args.query))
 
     for dev in device_list:
-        logger.info("---")
+        rule(f'[bold yellow]{dev["name"]}[/bold yellow]')
 
         filename = os.path.join(args.output_dir, f'{dev["name"]}.csv')
 
         if not os.path.exists(args.output_dir):
-            if confirm(f'Output dir {args.output_dir} does not exist, do you want to create it?', args.force):
+            if Confirm.ask(f'Output dir {args.output_dir} does not exist, do you want to create it?', default=True) or args.force:
                 os.makedirs(args.output_dir, exist_ok=True)
             else:
-                logger.warning('Not sure where to save csv files, quitting.')
+                info('Not sure where to save csv files, quitting.')
                 exit()
 
         if os.path.exists(filename):
-            if not confirm(f'Output file {filename} already exists, do you want to overwrite it?', args.force):
-                logger.info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
-                continue
+            if not args.force:
+                if not Confirm.ask(f'Output file {filename} already exists, do you want to overwrite it?', default=True):
+                    info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
+                    continue
 
-        logger.info(f'downloading data for device: {dev["name"]}, id: {dev["id"]["id"]}')
         client.save_timeseries(dev, start_date, end_date, filename=filename)
+    rule()
