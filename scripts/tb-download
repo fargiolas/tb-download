@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+#
+# Copyright (c) 2022 Filippo Argiolas <filippo.argiolas@ca.infn.it>.
+#
+# a simple script to download timeseries data from ThingsBoard
+# barely tested, poor error checking, ugly code, use at your own risk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+
+import os
+import datetime as dt
+import argparse
+
+from rich.prompt import Confirm
+
+from tb_download.client import TBDownload
+from tb_download.util import info, warning, error, rule
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="ThingsBoard timeseries downloader",
+                                     formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(prog, max_help_position=8, width=100))
+    parser.add_argument("--url", type=str, default="", help="ThingsBoard URL")
+    parser.add_argument("--public-id", type=str, help="ThingsBoard public dashboard ID, login as Public Customer")
+    parser.add_argument("--username", type=str, help="ThingsBoard Tenant username")
+    parser.add_argument("--password", type=str, help="ThingsBoard Tenant password")
+    parser.add_argument("--start-date", type=str, default="2022-03-01T00:00:00+00:00", help="start date, in ISO format")
+    parser.add_argument("--end-date", type=str, default="2022-03-02T23:59:59+00:00", help="end date, in ISO format")
+    parser.add_argument("--query", type=str, default="", help="Device search query (e.g. gas), empty for all devices")
+    parser.add_argument("--list-devices", action="store_true", help="List assets and devices")
+    parser.add_argument("-o", "--output-dir", default=os.curdir, help="Output directory for csv files")
+    parser.add_argument("-f", "--force", action="store_true", help="Force output directory creation and overwrite existing files")
+
+    args = parser.parse_args()
+
+    if not (args.public_id or args.username or args.password):
+        error("please provide either username and password or a public customer id")
+        error("if both credentials types are provided, public login will be preferred")
+        exit()
+
+        start_ts = int(dt.datetime.fromisoformat(args.start_date).timestamp() * 1000)
+    end_ts = int(dt.datetime.fromisoformat(args.end_date).timestamp() * 1000)
+
+    start_date = dt.datetime.fromisoformat(args.start_date)
+    end_date = dt.datetime.fromisoformat(args.end_date)
+
+    rule()
+    info('[bold deep_pink1]thingsboard timeseries downloader[/bold deep_pink1]', justify='center')
+    rule()
+
+    info(f'connecting to [blue link={args.url}]{args.url}[/blue link]')
+    client = TBDownload(args.url,
+                        public_id=args.public_id,
+                        username=args.username,
+                        password=args.password)
+
+    client.login()
+    info('enumerating assets and devices...')
+
+    if args.list_devices:
+        assets = client.get_assets()
+        for asset in assets['data']:
+            if 'Main_' in asset['name']:
+                continue
+
+            rule(f'asset: {asset["name"]}')
+
+            devs = client.get_asset_devices(asset)
+            info(" devices: {}".format(", ".join([d['name'] for d in devs])))
+
+            try:
+                dev = [d for d in devs if "-gps" in d['name']][0]
+
+                attrs = client.query_attributes(dev, attributes=['station_name',
+                                                                 'station_location',
+                                                                 'active',
+                                                                 'lastActivityTime'])
+                for attr in attrs:
+                    if "Time" in attr["key"]:
+                        attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)\
+                            .strftime('%Y-%m-%d %H:%M:%S')
+                    info(f' {attr["key"]}: {attr["value"]}')
+            except IndexError:
+                pass
+
+        exit()
+
+    info(f'querying devices matching search query: [italic]{args.query}[/italic]')
+    devs = client.get_devices(text_search=args.query)
+    device_list = devs["data"]
+
+    if len(device_list) > 0:
+        info("found {} devices matching the search query: {}".format(
+            len(device_list), ", ".join([f'[bold italic yellow]{d["name"]}[/bold italic yellow]' for d in device_list])))
+    else:
+        warning("no devices matching search query: {}".format(args.query))
+
+    for dev in device_list:
+        rule(f'[bold yellow]{dev["name"]}[/bold yellow]')
+
+        filename = os.path.join(args.output_dir, f'{dev["name"]}.csv')
+
+        if not os.path.exists(args.output_dir):
+            if Confirm.ask(f'output dir {args.output_dir} does not exist, do you want to create it?', default=True) or args.force:
+                os.makedirs(args.output_dir, exist_ok=True)
+            else:
+                info('Not sure where to save csv files, quitting.')
+                exit()
+
+        if os.path.exists(filename):
+            if not args.force:
+                if not Confirm.ask(f'output file {filename} already exists, do you want to overwrite it?', default=True):
+                    info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
+                    continue
+
+        client.save_timeseries(dev, start_date, end_date, filename=filename)
+    rule()
