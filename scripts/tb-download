@@ -26,11 +26,12 @@ import argparse
 from rich.prompt import Confirm
 
 from tb_download.client import TBDownload
-from tb_download.util import info, warning, error, rule
+from tb_download.util import RichArgumentParser, info, warning, error, rule
+
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="ThingsBoard timeseries downloader",
-                                     formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(prog, max_help_position=8, width=100))
+    parser = RichArgumentParser(description="ThingsBoard timeseries downloader",
+                                formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(prog, max_help_position=8, width=100))
     parser.add_argument("--url", type=str, default="", help="ThingsBoard URL")
     parser.add_argument("--public-id", type=str, help="ThingsBoard public dashboard ID, login as Public Customer")
     parser.add_argument("--username", type=str, help="ThingsBoard Tenant username")
