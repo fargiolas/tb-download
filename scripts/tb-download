@@ -20,6 +20,7 @@
 #
 
 import os
+import sys
 import datetime as dt
 import argparse
 
@@ -42,6 +43,10 @@ if __name__ == '__main__':
     parser.add_argument("--list-devices", action="store_true", help="List assets and devices")
     parser.add_argument("-o", "--output-dir", default=os.curdir, help="Output directory for csv files")
     parser.add_argument("-f", "--force", action="store_true", help="Force output directory creation and overwrite existing files")
+
+    if len(sys.argv) < 2:
+        parser.print_help()
+        exit()
 
     args = parser.parse_args()
 
