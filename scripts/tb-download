@@ -50,7 +50,7 @@ if __name__ == '__main__':
         error("if both credentials types are provided, public login will be preferred")
         exit()
 
-        start_ts = int(dt.datetime.fromisoformat(args.start_date).timestamp() * 1000)
+    start_ts = int(dt.datetime.fromisoformat(args.start_date).timestamp() * 1000)
     end_ts = int(dt.datetime.fromisoformat(args.end_date).timestamp() * 1000)
 
     start_date = dt.datetime.fromisoformat(args.start_date)
