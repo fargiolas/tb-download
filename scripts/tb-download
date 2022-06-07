@@ -62,12 +62,6 @@ if __name__ == '__main__':
     start_date = dt.datetime(*cal.parse(args.start_date)[0][:6])
     end_date = dt.datetime(*cal.parse(args.end_date)[0][:6])
 
-
-    print(args.start_date)
-    print(start_date)
-    print(args.end_date)
-    print(end_date)
-
     start_ts = int(start_date.timestamp() * 1000)
     end_ts = int(end_date.timestamp() * 1000)
 
