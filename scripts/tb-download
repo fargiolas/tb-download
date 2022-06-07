@@ -24,7 +24,7 @@ import sys
 import datetime as dt
 import argparse
 
-from dateutil.parser import parse
+import parsedatetime as pdt
 from rich.prompt import Confirm
 
 from tb_download.client import TBDownload
@@ -56,14 +56,16 @@ if __name__ == '__main__':
         error("if both credentials types are provided, public login will be preferred")
         exit()
 
-    if args.end_date in ["now", "today"]:
-        end_date = dt.datetime.now()
-    else:
-        end_date = parse(args.end_date, fuzzy=True)
 
-    start_date = parse(args.start_date, fuzzy=True)
+    cal = pdt.Calendar()
 
+    start_date = dt.datetime(*cal.parse(args.start_date)[0][:6])
+    end_date = dt.datetime(*cal.parse(args.end_date)[0][:6])
+
+
+    print(args.start_date)
     print(start_date)
+    print(args.end_date)
     print(end_date)
 
     start_ts = int(start_date.timestamp() * 1000)
