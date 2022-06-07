@@ -256,6 +256,11 @@ class TBDownload(object):
                 if df is None:
                     continue
 
+                # if a column is missing for the whole requested time it won't be returned
+                # by get_timeseries and to_csv will complain when appending. Fill missing
+                # colums with NaN/None data instead
+                df = df.reindex(columns=keys)
+
                 df.to_csv(filename, mode="a" if append else "w", columns=keys, header=not append)
 
                 append = True
