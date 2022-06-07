@@ -24,6 +24,7 @@ import sys
 import datetime as dt
 import argparse
 
+from dateutil.parser import parse
 from rich.prompt import Confirm
 
 from tb_download.client import TBDownload
@@ -37,8 +38,8 @@ if __name__ == '__main__':
     parser.add_argument("--public-id", type=str, help="ThingsBoard public dashboard ID, login as Public Customer")
     parser.add_argument("--username", type=str, help="ThingsBoard Tenant username")
     parser.add_argument("--password", type=str, help="ThingsBoard Tenant password")
-    parser.add_argument("--start-date", type=str, default="2022-03-01T00:00:00+00:00", help="start date, in ISO format")
-    parser.add_argument("--end-date", type=str, default="2022-03-02T23:59:59+00:00", help="end date, in ISO format")
+    parser.add_argument("--start-date", type=str, default="1 week ago", help="start date")
+    parser.add_argument("--end-date", type=str, default="today", help="end date")
     parser.add_argument("--query", type=str, default="", help="Device search query (e.g. gas), empty for all devices")
     parser.add_argument("--list-devices", action="store_true", help="List assets and devices")
     parser.add_argument("-o", "--output-dir", default=os.curdir, help="Output directory for csv files")
@@ -55,11 +56,18 @@ if __name__ == '__main__':
         error("if both credentials types are provided, public login will be preferred")
         exit()
 
-    start_ts = int(dt.datetime.fromisoformat(args.start_date).timestamp() * 1000)
-    end_ts = int(dt.datetime.fromisoformat(args.end_date).timestamp() * 1000)
+    if args.end_date in ["now", "today"]:
+        end_date = dt.datetime.now()
+    else:
+        end_date = parse(args.end_date, fuzzy=True)
 
-    start_date = dt.datetime.fromisoformat(args.start_date)
-    end_date = dt.datetime.fromisoformat(args.end_date)
+    start_date = parse(args.start_date, fuzzy=True)
+
+    print(start_date)
+    print(end_date)
+
+    start_ts = int(start_date.timestamp() * 1000)
+    end_ts = int(end_date.timestamp() * 1000)
 
     rule()
     info('[bold deep_pink1]thingsboard timeseries downloader[/bold deep_pink1]', justify='center')
