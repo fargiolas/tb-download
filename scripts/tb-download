@@ -56,83 +56,88 @@ if __name__ == '__main__':
         error("if both credentials types are provided, public login will be preferred")
         exit()
 
+    try:
+        cal = pdt.Calendar()
 
-    cal = pdt.Calendar()
+        start_date = dt.datetime(*cal.parse(args.start_date)[0][:6])
+        end_date = dt.datetime(*cal.parse(args.end_date)[0][:6])
 
-    start_date = dt.datetime(*cal.parse(args.start_date)[0][:6])
-    end_date = dt.datetime(*cal.parse(args.end_date)[0][:6])
+        start_ts = int(start_date.timestamp() * 1000)
+        end_ts = int(end_date.timestamp() * 1000)
 
-    start_ts = int(start_date.timestamp() * 1000)
-    end_ts = int(end_date.timestamp() * 1000)
+        rule()
+        info('[bold deep_pink1]thingsboard timeseries downloader[/bold deep_pink1]', justify='center')
+        rule()
 
-    rule()
-    info('[bold deep_pink1]thingsboard timeseries downloader[/bold deep_pink1]', justify='center')
-    rule()
+        info(f'connecting to [blue link={args.url}]{args.url}[/blue link]')
+        client = TBDownload(args.url,
+                            public_id=args.public_id,
+                            username=args.username,
+                            password=args.password)
 
-    info(f'connecting to [blue link={args.url}]{args.url}[/blue link]')
-    client = TBDownload(args.url,
-                        public_id=args.public_id,
-                        username=args.username,
-                        password=args.password)
+        client.login()
+        info('enumerating assets and devices...')
 
-    client.login()
-    info('enumerating assets and devices...')
-
-    if args.list_devices:
-        assets = client.get_assets()
-        for asset in assets['data']:
-            if 'Main_' in asset['name']:
-                continue
-
-            rule(f'asset: {asset["name"]}')
-
-            devs = client.get_asset_devices(asset)
-            info(" devices: {}".format(", ".join([d['name'] for d in devs])))
-
-            try:
-                dev = [d for d in devs if "-gps" in d['name']][0]
-
-                attrs = client.query_attributes(dev, attributes=['station_name',
-                                                                 'station_location',
-                                                                 'active',
-                                                                 'lastActivityTime'])
-                for attr in attrs:
-                    if "Time" in attr["key"]:
-                        attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)\
-                            .strftime('%Y-%m-%d %H:%M:%S')
-                    info(f' {attr["key"]}: {attr["value"]}')
-            except IndexError:
-                pass
-
-        exit()
-
-    info(f'querying devices matching search query: [italic]{args.query}[/italic]')
-    devs = client.get_devices(text_search=args.query)
-    device_list = devs["data"]
-
-    if len(device_list) > 0:
-        info("found {} devices matching the search query: {}".format(
-            len(device_list), ", ".join([f'[bold italic yellow]{d["name"]}[/bold italic yellow]' for d in device_list])))
-    else:
-        warning("no devices matching search query: {}".format(args.query))
-
-    for dev in device_list:
-        rule(f'[bold yellow]{dev["name"]}[/bold yellow]')
-
-        filename = os.path.join(args.output_dir, f'{dev["name"]}.csv')
-
-        if not os.path.exists(args.output_dir):
-            if args.force or Confirm.ask(f'output dir {args.output_dir} does not exist, do you want to create it?', default=True):
-                os.makedirs(args.output_dir, exist_ok=True)
-            else:
-                info('Not sure where to save csv files, quitting.')
-                exit()
-
-        if os.path.exists(filename):
-            if not args.force:
-                if not Confirm.ask(f'output file {filename} already exists, do you want to overwrite it?', default=True):
-                    info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
+        if args.list_devices:
+            assets = client.get_assets()
+            for asset in assets['data']:
+                if 'Main_' in asset['name']:
                     continue
 
-        client.save_timeseries(dev, start_date, end_date, filename=filename)
-    rule()
+                rule(f'asset: {asset["name"]}')
+
+                devs = client.get_asset_devices(asset)
+                info(" devices: {}".format(", ".join([d['name'] for d in devs])))
+
+                try:
+                    dev = [d for d in devs if "-gps" in d['name']][0]
+
+                    attrs = client.query_attributes(dev, attributes=['station_name',
+                                                                     'station_location',
+                                                                     'active',
+                                                                     'lastActivityTime'])
+                    for attr in attrs:
+                        if "Time" in attr["key"]:
+                            attr["value"] = dt.datetime.fromtimestamp(attr["value"] / 1000.)\
+                                .strftime('%Y-%m-%d %H:%M:%S')
+                        info(f' {attr["key"]}: {attr["value"]}')
+                except IndexError:
+                    pass
+
+            exit()
+
+        info(f'querying devices matching search query: [italic]{args.query}[/italic]')
+        devs = client.get_devices(text_search=args.query)
+        device_list = devs["data"]
+
+        if len(device_list) > 0:
+            info("found {} devices matching the search query: {}".format(
+                len(device_list), ", ".join([f'[bold italic yellow]{d["name"]}[/bold italic yellow]' for d in device_list])))
+        else:
+            warning("no devices matching search query: {}".format(args.query))
+
+        for dev in device_list:
+            rule(f'[bold yellow]{dev["name"]}[/bold yellow]')
+
+            filename = os.path.join(args.output_dir, f'{dev["name"]}.csv')
+
+            if not os.path.exists(args.output_dir):
+                if args.force or Confirm.ask(f'output dir {args.output_dir} does not exist, do you want to create it?', default=True):
+                    os.makedirs(args.output_dir, exist_ok=True)
+                else:
+                    info('Not sure where to save csv files, quitting.')
+                    exit()
+
+            if os.path.exists(filename):
+                if not args.force:
+                    if not Confirm.ask(f'output file {filename} already exists, do you want to overwrite it?', default=True):
+                        info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
+                        continue
+
+            client.save_timeseries(dev, start_date, end_date, filename=filename)
+        rule()
+
+    except KeyboardInterrupt:
+        rule()
+        info("Keyboard interrupt detected, force quitting!")
+        warning("Caution: if you were in the middle of a download, the resulting csv file may be corrupted")
