@@ -27,8 +27,68 @@ import argparse
 import parsedatetime as pdt
 from rich.prompt import Confirm
 
+from rich.progress import Progress
 from tb_download.client import TBDownload
-from tb_download.util import RichArgumentParser, info, warning, error, rule
+from tb_download.util import RichArgumentParser, console, info, warning, error, rule
+
+
+def save_timeseries(client, device, start_date, end_date, filename="output.csv"):
+    """Save timeseries data from selected interval in CSV file.
+
+    Download timeseries data from selected interval one day at the
+    time using `get_timeseries`, concat resulting dataframes and
+    save everything to a CSV file.
+
+    :param device: desired device
+    :param start_date: interval start, python datetime object
+    :param end_date: interval end, python datetime object
+    :param filename: output filename
+
+    """
+    keys = client.get_timeseries_keys(device)
+    if not keys:
+        warning("no telemetry found for selected device")
+        return
+
+    delta = dt.timedelta(hours=3)
+    total_timespan = end_date - start_date
+    orig_start_date = start_date
+
+    info(f"saving to `{filename}`")
+
+    # create the csv in write mode in the first iteration
+    # append in the following ones
+    # also only enable header in the first loop
+    append = False
+
+    with Progress(transient=True, console=console) as progress:
+        task = progress.add_task("[red]Downloading...", total=total_timespan / delta)
+        while start_date <= end_date:
+            interval_start = start_date
+            interval_end = interval_start + delta
+            span = start_date - orig_start_date
+            start_date = interval_end
+
+            fmt = "%Y-%m-%d %H:%M:%S"
+            progress.console.print(f'fetching data from {interval_start.strftime(fmt)} to {interval_end.strftime(fmt)} (days {span.days+1} of {total_timespan.days+1})')
+
+            df = client.get_timeseries(device, keys, interval_start.timestamp(), interval_end.timestamp())
+            if df is None:
+                warning("no data for selected interval")
+                continue
+
+            # if a column is missing for the whole requested time it won't be returned
+            # by get_timeseries and to_csv will complain when appending. Fill missing
+            # colums with NaN/None data instead
+            df = df.reindex(columns=keys)
+
+            df.to_csv(filename, mode="a" if append else "w", columns=keys, header=not append)
+
+            append = True
+
+            progress.update(task, advance=1)
+
+    info('[bold green]download complete.[/bold green]')
 
 
 if __name__ == '__main__':
@@ -134,7 +194,7 @@ if __name__ == '__main__':
                         info(f'skipping device: {dev["name"]}, id: {dev["id"]["id"]}')
                         continue
 
-            client.save_timeseries(dev, start_date, end_date, filename=filename)
+            save_timeseries(client, dev, start_date, end_date, filename=filename)
         rule()
 
     except KeyboardInterrupt:
