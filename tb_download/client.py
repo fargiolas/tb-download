@@ -182,7 +182,7 @@ class TBDownload(object):
                                   'textSearch': text_search})
         return r.json()
 
-    def get_timeseries(self, device, keys, start_ts, end_ts, limit=86400 * 10):
+    def get_timeseries(self, device, keys, start_ts=None, end_ts=None, limit=86400 * 10):
         """Retrieve time series for a device in the desired interval.
 
         :param device: desired device
@@ -194,22 +194,28 @@ class TBDownload(object):
         """
         entity_id = device['id']['id']
         entity_type = device['id']['entityType']
+
+        params={'keys': ','.join(keys),
+                'limit': limit}
+
+        if start_ts:
+            params.update({'startTs': int(start_ts * 1000)})
+        if end_ts:
+            params.update({'endTs': int(end_ts * 1000)})
+
         r = self._get(f'{self.url}/api/plugins/telemetry/{entity_type}/{entity_id}/values/timeseries',
                       headers=self.auth_headers,
-                      params={'keys': ','.join(keys),
-                              'limit': limit,
-                              'startTs': int(start_ts * 1000),
-                              'endTs': int(end_ts * 1000)})
+                      params=params)
 
         if not r.json():
             return None
 
         dfs = []
         for k in r.json().keys():
-            df = pd.DataFrame.from_dict(r.json()[k])
+            df = pd.DataFrame.from_dict(r.json()[k], dtype="float")
             df.set_index("ts", drop=True, inplace=True)
             df.columns = [k]
-            dfs.append(df.sort_index())
+            dfs.append(df.sort_index(ascending=True))
 
         return pd.concat(dfs, join="outer", axis=1)
 
