@@ -89,6 +89,7 @@ class TBDownload(object):
                                  'password': self.password})
 
         self.token = r.json()['token']
+        self.refresh_token = r.json()['refreshToken']
         self.auth_headers = {'X-Authorization': f'Bearer {self.token}'}
 
         if self.public_id:
@@ -99,6 +100,14 @@ class TBDownload(object):
                           headers=self.auth_headers)
             self.user_authority = r.json()['authority']
             self.user_id = r.json()['customerId']['id']
+
+    def refresh(self):
+        """Refresh session."""
+        r = self._post(f'{self.url}/api/auth/token',
+                       json={'refreshToken': self.refresh_token})
+        self.token = r.json()['token']
+        self.refresh_token = r.json()['refreshToken']
+        self.auth_headers = {'X-Authorization': f'Bearer {self.token}'}
 
     def get_assets(self, page_size=20, page=0):
         """Enumerate assets available for current user.
