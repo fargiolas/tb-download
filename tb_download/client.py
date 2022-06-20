@@ -214,6 +214,7 @@ class TBDownload(object):
         for k in r.json().keys():
             df = pd.DataFrame.from_dict(r.json()[k], dtype="float")
             df.set_index("ts", drop=True, inplace=True)
+            df.index = df.index.astype(int)
             df.columns = [k]
             dfs.append(df.sort_index(ascending=True))
 
