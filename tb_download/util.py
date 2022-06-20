@@ -22,7 +22,6 @@ import argparse
 from rich.console import Console
 from rich.highlighter import RegexHighlighter
 from rich.theme import Theme
-from rich.traceback import install
 
 
 class TBDownloadHighlighter(RegexHighlighter):
@@ -37,7 +36,6 @@ class TBDownloadHighlighter(RegexHighlighter):
                   ]
 
 
-install(show_locals=True)
 theme = Theme({"base.tag": "bold yellow",
                "base.true": "bold green",
                "base.false": "bold red",

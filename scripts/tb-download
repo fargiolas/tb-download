@@ -28,9 +28,11 @@ import parsedatetime as pdt
 from rich.prompt import Confirm
 
 from rich.progress import Progress
+from rich.traceback import install
 from tb_download.client import TBDownload
 from tb_download.util import RichArgumentParser, console, info, warning, error, rule
 
+install(show_locals=True)
 
 def save_timeseries(client, device, start_date, end_date, filename="output.csv"):
     """Save timeseries data from selected interval in CSV file.
